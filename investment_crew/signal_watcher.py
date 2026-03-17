@@ -79,40 +79,29 @@ def scan_news() -> list:
 
 # ─── Step 2: スコアリングAI ───────────────────────────────
 
-def score_news_batch(news_items: list) -> list:
-    """ニュースをバッチでGroqに送り、スコアリングする"""
-    if not news_items:
-        return []
-
-    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-
-    # ニュースをまとめてプロンプトに
+def _score_chunk(client, chunk: list, chunk_num: int) -> list:
+    """ニュースのチャンク（最大15件）をスコアリングする"""
     news_text = ""
-    for i, item in enumerate(news_items):
+    for i, item in enumerate(chunk):
         news_text += f"\n--- ニュース {i+1} ---\n"
         news_text += f"タイトル: {item.get('title', '')}\n"
-        news_text += f"概要: {item.get('body', '')}\n"
+        news_text += f"概要: {item.get('body', '')[:200]}\n"
         news_text += f"ソース: {item.get('source', '')}\n"
         news_text += f"日付: {item.get('date', '')}\n"
 
-    prompt = f"""{SCORING_SYSTEM_PROMPT}
+    prompt = f"""以下の{len(chunk)}件のニュースを分析し、投資シグナルとしてスコアリングしてください。
 
-以下の{len(news_items)}件のニュースを分析し、それぞれ投資シグナルとしてスコアリングしてください。
-
-特に重要: 具体的な銘柄（ティッカーシンボル）に結びつくニュースを優先してください。
-銘柄が特定できないニュースはスコア0としてください。
-日本株の場合、ティッカーは「7203.T」のようにyfinance形式で返してください。
+重要ルール:
+- 具体的な銘柄（ティッカー）に結びつくニュースのみスコアを付ける
+- 銘柄が特定できないニュースはスキップ（出力しない）
+- 日本株は「7203.T」のようにyfinance形式で返す
+- JSON配列のみ出力（説明文は不要）
 
 {news_text}
 
-全ニュースの結果をJSON配列で返してください。各要素のフォーマット:
-{{"index": 1, "ticker": "AAPL", "score": 75, "breakdown": {{"A": 12, "B": 25, "C": 20, "D": 0, "E": 15}}, "reason": "理由", "holding_period": "swing"}}
-
-銘柄が特定できないニュースの場合:
-{{"index": 1, "ticker": null, "score": 0, "reason": "銘柄特定不可"}}
+出力形式（JSON配列のみ、他のテキストは絶対に含めない）:
+[{{"index": 1, "ticker": "AAPL", "score": 75, "reason": "理由を1文で", "holding_period": "swing"}}]
 """
-
-    print(f"[Step 2] スコアリングAI実行中（{len(news_items)}件）...")
 
     try:
         response = client.chat.completions.create(
@@ -121,30 +110,47 @@ def score_news_batch(news_items: list) -> list:
                 {"role": "system", "content": SCORING_SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=4096,
+            max_tokens=2048,
             temperature=0.3,
         )
 
-        # レスポンスからJSON配列を抽出
         text = response.choices[0].message.content
-        # JSONブロックを探す
         start = text.find("[")
         end = text.rfind("]") + 1
         if start >= 0 and end > start:
             scores = json.loads(text[start:end])
+            print(f"  チャンク{chunk_num}: {len(scores)}件のスコアを取得")
+            return scores
         else:
-            print("  警告: スコアリング結果のパースに失敗")
+            print(f"  チャンク{chunk_num}: パース失敗")
             return []
-
-        # 閾値以上のものだけ返す
-        high_scores = [s for s in scores if s.get("score", 0) >= SIGNAL_THRESHOLD]
-        print(f"  → {len(scores)}件中 {len(high_scores)}件が閾値({SIGNAL_THRESHOLD}点)以上")
-
-        return high_scores
-
     except Exception as e:
-        print(f"  エラー: スコアリングAI失敗 - {e}")
+        print(f"  チャンク{chunk_num}: エラー - {e}")
         return []
+
+
+def score_news_batch(news_items: list) -> list:
+    """ニュースを小分けにしてGroqでスコアリングする"""
+    if not news_items:
+        return []
+
+    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+
+    CHUNK_SIZE = 15
+    chunks = [news_items[i:i+CHUNK_SIZE] for i in range(0, len(news_items), CHUNK_SIZE)]
+
+    print(f"[Step 2] スコアリングAI実行中（{len(news_items)}件 → {len(chunks)}チャンク）...")
+
+    all_scores = []
+    for i, chunk in enumerate(chunks):
+        scores = _score_chunk(client, chunk, i + 1)
+        all_scores.extend(scores)
+
+    # 閾値以上のものだけ返す
+    high_scores = [s for s in all_scores if s.get("score", 0) >= SIGNAL_THRESHOLD]
+    print(f"  → 合計{len(all_scores)}件中 {len(high_scores)}件が閾値({SIGNAL_THRESHOLD}点)以上")
+
+    return high_scores
 
 
 # ─── Step 3: 市場織り込みチェック ─────────────────────────
