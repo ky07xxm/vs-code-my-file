@@ -19,7 +19,7 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 
-import google.generativeai as genai
+from groq import Groq
 from crewai import Agent, Crew, Task, Process
 from dotenv import load_dotenv
 
@@ -80,12 +80,11 @@ def scan_news() -> list:
 # ─── Step 2: スコアリングAI ───────────────────────────────
 
 def score_news_batch(news_items: list) -> list:
-    """ニュースをバッチでGeminiに送り、スコアリングする"""
+    """ニュースをバッチでGroqに送り、スコアリングする"""
     if not news_items:
         return []
 
-    genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-    model = genai.GenerativeModel(LLM_MODEL_SCORING)
+    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
     # ニュースをまとめてプロンプトに
     news_text = ""
@@ -116,10 +115,18 @@ def score_news_batch(news_items: list) -> list:
     print(f"[Step 2] スコアリングAI実行中（{len(news_items)}件）...")
 
     try:
-        response = model.generate_content(prompt)
+        response = client.chat.completions.create(
+            model=LLM_MODEL_SCORING,
+            messages=[
+                {"role": "system", "content": SCORING_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=4096,
+            temperature=0.3,
+        )
 
         # レスポンスからJSON配列を抽出
-        text = response.text
+        text = response.choices[0].message.content
         # JSONブロックを探す
         start = text.find("[")
         end = text.rfind("]") + 1

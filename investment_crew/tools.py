@@ -14,7 +14,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from crewai.tools import tool
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 
 from config import (
     MA_PERIODS, RSI_PERIOD, BOLLINGER_PERIOD, BOLLINGER_STD,

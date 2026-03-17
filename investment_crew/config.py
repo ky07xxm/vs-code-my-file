@@ -57,10 +57,10 @@ MAX_PE_RATIO = 80       # PER上限（成長株も拾うため緩め）
 MIN_MARKET_CAP = 1e8    # 最低時価総額（1億ドル / 100億円）
 
 # ─── LLM設定 ─────────────────────────────────────────────
-# CrewAIエージェント用（Gemini、無料枠）
-LLM_MODEL = "gemini/gemini-2.0-flash"
-# スコアリングAI用（Gemini、無料枠）
-LLM_MODEL_SCORING = "gemini-2.0-flash"
+# CrewAIエージェント用（Groq、無料枠）
+LLM_MODEL = "groq/llama-3.3-70b-versatile"
+# スコアリングAI用（Groq、無料枠）
+LLM_MODEL_SCORING = "llama-3.3-70b-versatile"
 
 # ─── スコアリングAI システムプロンプト ─────────────────────
 SCORING_SYSTEM_PROMPT = """あなたは投資シグナルのスコアリング専門家です。
