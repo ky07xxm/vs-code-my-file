@@ -1,0 +1,32 @@
+name: Investment Signal Watcher
+
+on:
+  schedule:
+    # 平日 15分ごと（UTC: JST-9 → JST 8:00〜23:00 = UTC 23:00〜14:00）
+    - cron: "*/15 23,0-14 * * 0-4"  # 日〜木（UTC）= 月〜金（JST）
+  workflow_dispatch:  # 手動実行
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    # 平日のみ実行（cronのスケジュールだけでは完全に制御できないため）
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python セットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: 依存パッケージをインストール
+        working-directory: investment_crew
+        run: pip install -r requirements.txt
+
+      - name: シグナルウォッチャーを実行
+        working-directory: investment_crew
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python signal_watcher.py --force
