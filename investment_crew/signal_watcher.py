@@ -146,11 +146,24 @@ def score_news_batch(news_items: list) -> list:
         scores = _score_chunk(client, chunk, i + 1)
         all_scores.extend(scores)
 
-    # 閾値以上のものだけ返す
+    # 閾値以上のものだけ返し、重複ティッカーを除去してスコア上位3件に絞る
     high_scores = [s for s in all_scores if s.get("score", 0) >= SIGNAL_THRESHOLD]
-    print(f"  → 合計{len(all_scores)}件中 {len(high_scores)}件が閾値({SIGNAL_THRESHOLD}点)以上")
+    # スコア降順でソート
+    high_scores.sort(key=lambda x: x.get("score", 0), reverse=True)
+    # 重複ティッカーを除去（上位のスコアを優先）
+    seen_tickers = set()
+    unique_scores = []
+    for s in high_scores:
+        ticker = s.get("ticker")
+        if ticker and ticker not in seen_tickers:
+            seen_tickers.add(ticker)
+            unique_scores.append(s)
+    # 上位3件に絞る（Groqのレート制限対策）
+    MAX_CANDIDATES = 3
+    result = unique_scores[:MAX_CANDIDATES]
+    print(f"  → 合計{len(all_scores)}件中 {len(high_scores)}件が閾値以上 → 上位{len(result)}件を深掘り対象に")
 
-    return high_scores
+    return result
 
 
 # ─── Step 3: 市場織り込みチェック ─────────────────────────
@@ -406,8 +419,11 @@ def run_once(force: bool = False):
         print("すべての銘柄が織り込み済みまたはクールダウン中。終了。")
         return
 
-    # Step 4 & 5: 深掘り分析 → Slack通知
-    for item in candidates:
+    # Step 4 & 5: 深掘り分析 → Slack通知（銘柄間に60秒ウェイト）
+    for i, item in enumerate(candidates):
+        if i > 0:
+            print(f"\n  レート制限回避: 60秒待機中...")
+            time.sleep(60)
         try:
             result = run_deep_analysis(item)
             set_cooldown(item["ticker"])
